@@ -87,8 +87,8 @@ sd(listen_stdrd)
 
 #Creating standardized test score across all scores
 
-sat_index <- (math_stdrd + read_stdrd + wordskill_stdrd + listen_stdrd)/4
-summary(sat_index)
+star$sat_index <- (math_stdrd + read_stdrd + wordskill_stdrd + listen_stdrd)/4
+summary(star$sat_index)
 ```
 
 ```{r}
@@ -111,5 +111,161 @@ ggsave("histostat.png")
 
 ```
 There is some overlap between the standardized test scores for small and regular classrooms. 
+
+```{r}
+
+#4A: Aggregating the dataset by teacher information
+
+by_class <- star |> 
+            group_by(teacher_id, school_id, small, teacher_masters, teacher_white, teacher_black,    teacher_experience)
+
+classes <- by_class |> 
+           summarise(sat_index = mean(sat_index),
+                     class_size = mean(class_size))
+
+#reporting summary variables 
+summarysmall <- classes |> 
+                filter(small == 1) |> 
+                summary() 
+summarysmall
+
+summaryreg <- classes |> 
+                filter(small == 0) |> 
+                summary() 
+summaryreg
+
+```
+```{r}
+
+#4B: Creating linear model for teacher experience and class size, constructing 95% confidence interval
+mod1 <- lm(teacher_experience ~ small, data = classes)
+summary(mod1)
+
+#95% Confidence interval
+mod1coef <- coeftest(mod1, vcov = vcovHC(mod1, type="HC1"))
+mod1se <- mod1coef[4]
+estdiff <- mod1coef[2]
+lb_cf1 <- estdiff - 1.96*mod1se
+ub_cf1 <- estdiff + 1.96*mod1se
+
+lb_cf1 #and 
+ub_cf1
+```
+
+The 95 % confidence interval for the estimated difference in teacher experience based on class size is between a -1.71 decrease in years of teacher experience and an .89 increase in years of experience. The regression coefficient is not statistically significant. 
+
+```{r}
+
+#4C: Teacher Masters
+mod2 <- lm(teacher_masters ~ small, data = classes)
+summary(mod2)
+
+#95% Confidence interval
+mod2coef <- coeftest(mod2, vcov = vcovHC(mod2, type="HC1"))
+mod2se <- mod2coef[4]
+estdiff <- mod2coef[2]
+lb_cf2 <- estdiff - 1.96*mod2se
+ub_cf2 <- estdiff + 1.96*mod2se
+
+lb_cf2 #and 
+ub_cf2
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher having a master's degree based on class size is between a -0.14 decrease in the likelihood of a teacher having a master's and a 0.06 increase in the likelihood of a given teacher having a master's. The regression coefficient is not statistically significant. 
+
+```{r}
+
+#4c: Teacher white
+mod3 <- lm(teacher_white ~ small, data = classes)
+summary(mod3)
+
+#95% Confidence interval
+mod3coef <- coeftest(mod3, vcov = vcovHC(mod3, type="HC1"))
+mod3se <- mod3coef[4]
+estdiff <- mod3coef[2]
+lb_cf3 <- estdiff - 1.96*mod3se
+ub_cf3 <- estdiff + 1.96*mod3se
+
+lb_cf3 #and 
+ub_cf3
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher being white based on class size is between a -0.03 decrease in the likelihood of a teacher being white and a 0.12 increase. The regression coefficient is not statistically significant. 
+
+
+```{r}
+
+#4C: Teacher Black
+mod4 <- lm(teacher_black ~ small, data = classes)
+summary(mod4)
+
+#95% Confidence interval
+mod4coef <- coeftest(mod4, vcov = vcovHC(mod4, type="HC1"))
+mod4se <- mod4coef[4]
+estdiff <- mod4coef[2]
+lb_cf4 <- estdiff - 1.96*mod4se
+ub_cf4 <- estdiff + 1.96*mod4se
+
+lb_cf4 
+ub_cf4
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher being Black based on class size is between a -0.11 decrease in the likelihood of a teacher being white and a 0.04 increase. The regression coefficient is not statistically significant. 
+
+***Question 4D***
+As reported above, none of the regression coefficients in the linear models exploring the relationship between each of the teacher characteristics and class size were statistically significant. The coefficient magnitudes are quite small compared to the intercept, suggesting that they are not practically significant. This suggests that the randomization was successful in balancing teacher characteristics. 
+
+```{r}
+
+#Building multilinear regression model using school fixed effects
+
+mod5 <- lm(sat_index ~ small + factor(school_id), data = classes)
+summary(mod5)
+
+#95% confidence interval
+mod5coef <- coeftest(mod5, vcov = vcovHC(mod5, type="HC1"))
+mod5se <- mod5coef[2,2]
+estdiff <- mod5coef[2]
+lb_cf5 <- estdiff - 1.96*mod5se
+ub_cf5 <- estdiff + 1.96*mod5se
+
+#Bar chart showing the difference in standardized test score between small and regular classes
+control_bar <- mean(classes$sat_index[classes$small == 0])
+treat_bar <- control_bar + estdiff
+
+#create a dataframe
+data_for_graph <- data_frame(c(control_bar, treat_bar),
+                             c(NA, mod5se),
+                             c("Control", "Treatment"),
+                             c(NA, lb_cf5),
+                             c(NA, ub_cf5))
+
+names(data_for_graph)[1] <- "SAT_Index"
+names(data_for_graph)[2] <- "SE"
+names(data_for_graph)[3] <- "Groups"
+names(data_for_graph)[4] <- "Lower_bound"
+names(data_for_graph)[5] <- "Upper_bound"
+
+#create graph
+bar <- data_for_graph |> 
+       ggplot(aes(x = Groups, y = SAT_Index, fill = Groups, label = round(SAT_Index, 2))) +
+       geom_bar(stat = "identity", show.legend = FALSE, width = .6) +
+       geom_errorbar(aes(ymin = Lower_bound, ymax = Upper_bound), width=.1, size = 0.7,      color="black") +
+      labs(y = "SAT Index Score",
+           title = "Estimated Effect of STAR Treatment on Test Scores") +
+      scale_fill_manual(values = c("red", "blue")) +
+  geom_text(position = position_dodge(width = .9),    # move to center of bars
+              vjust = -0.5,    # nudge above top of bar
+              size = 3)
+
+ggsave("bar.png")
+bar
+
+```
+
+
 
 
