@@ -1,0 +1,115 @@
+---
+title: "Lab4_2"
+output: pdf_document
+date: "2023-02-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(haven)
+library(ggthemes)
+library(statar) 
+library(tidyquant)
+library(purrr)
+library(sandwich)
+library(lmtest)
+star <- read_dta("star.dta")
+```
+
+***Question 1***
+It's important to randomly assign both students and teachers to determine any causal effect of class size to prevent selection bias influencing potential given coefficients. It could be that really good teachers could improve test scores, just as really motivated students could improve their test scores as well, confounding the causal effect of class size on test scores. 
+
+```{r}
+
+#Question 2: Average class size comparison between small vs. regular kindergarten classes
+#Group data set by whether class size was categorized as small or not then summarize mean class size for each group. 
+
+class_size <- star |> 
+  group_by(small) |> 
+  summarise(mean = mean(class_size))
+class_size
+
+
+```
+The average class size for small classes was roughly 15 students per class; for regular classes, about 22-23 students per class. 
+
+```{r}
+
+#Question 3: Converting different test scores into a standardized unit
+
+#3A: Creating standardized test scores
+#creating control variables
+control <- star |> 
+           filter(small == 0) |> 
+           select(read, math, listen, wordskill)
+
+#Math
+math_ctrl_mean <- mean(control$math, na.rm = TRUE)
+math_ctrl_sd <- sd(control$math, na.rm = TRUE)
+
+math_stdrd <- (star$math - math_ctrl_mean)/math_ctrl_sd
+
+#Reading
+read_ctrl_mean <- mean(control$read, na.rm = TRUE)
+read_ctrl_sd <- sd(control$read, na.rm = TRUE)
+
+read_stdrd <- (star$read - read_ctrl_mean)/read_ctrl_sd
+
+#Wordskill
+wordskill_ctrl_mean <- mean(control$wordskill, na.rm = TRUE)
+wordskill_ctrl_sd <- sd(control$wordskill, na.rm = TRUE)
+
+wordskill_stdrd <- (star$wordskill - wordskill_ctrl_mean)/wordskill_ctrl_sd
+
+#Listening 
+listen_ctrl_mean <- mean(control$listen, na.rm = TRUE)
+listen_ctrl_sd <- sd(control$listen, na.rm = TRUE)
+
+listen_stdrd <- (star$listen - listen_ctrl_mean)/listen_ctrl_sd
+
+#Reporting summary statistics for four standardized test score variables
+
+summary(math_stdrd)
+sd(math_stdrd)
+
+summary(read_stdrd)
+sd(read_stdrd)
+
+summary(wordskill_stdrd)
+sd(wordskill_stdrd)
+
+summary(listen_stdrd)
+sd(listen_stdrd)
+
+```
+```{r}
+
+#Creating standardized test score across all scores
+
+sat_index <- (math_stdrd + read_stdrd + wordskill_stdrd + listen_stdrd)/4
+summary(sat_index)
+```
+
+```{r}
+
+#3C: Histogram of sat_index for small and regular kindergarten classes
+
+histosat <- star |> 
+ggplot(aes(x = sat_index,
+          fill = factor(small, labels=c("Small", "Regular")),
+          y = ..density..)) +
+          geom_histogram(alpha = 0.5, position = "identity") +
+          labs(x = "Standardized Test Score", 
+               y = "Frequency",
+               fill = "Class Size",
+               title = "Standardized SAT Scores for Small vs. Regular Classrooms") 
+histosat
+
+ggsave("histostat.png")
+
+
+```
+There is some overlap between the standardized test scores for small and regular classrooms. 
+
+

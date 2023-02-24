@@ -5,25 +5,264 @@ date: "2023-02-21"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(haven)
+library(ggthemes)
+library(statar) 
+library(tidyquant)
+library(purrr)
+library(sandwich)
+library(lmtest)
+star <- read_dta("star.dta")
+view(star)
+
 ```
 
-## R Markdown
+***Question 1***
+It's important to randomly assign both students and teachers to determine any causal effect of class size to prevent selection bias influencing potential given coefficients. It could be that really good teachers could improve test scores, just as really motivated students could improve their test scores as well, confounding the causal effect of class size on test scores. 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r Q2}
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+#Question 2: Average class size comparison between small vs. regular kindergarten classes
+#Group data set by whether class size was categorized as small or not then summarize mean class size for each group. 
 
-```{r cars}
-summary(cars)
+class_size <- star |> 
+  group_by(small) |> 
+  summarise(mean = mean(class_size))
+class_size
+
+```
+The average class size for small classes was roughly 15 students per class; for regular classes, about 22-23 students per class. 
+
+```{r q3a}
+
+#Question 3: Converting different test scores into a standardized unit
+
+#3A: Creating standardized test scores
+#creating control variables
+control <- star |> 
+           filter(small == 0) |> 
+           select(read, math, listen, wordskill)
+
+#Math
+math_ctrl_mean <- mean(control$math, na.rm = TRUE)
+math_ctrl_sd <- sd(control$math, na.rm = TRUE)
+
+math_stdrd <- (star$math - math_ctrl_mean)/math_ctrl_sd
+
+#Reading
+read_ctrl_mean <- mean(control$read, na.rm = TRUE)
+read_ctrl_sd <- sd(control$read, na.rm = TRUE)
+
+read_stdrd <- (star$read - read_ctrl_mean)/read_ctrl_sd
+
+#Wordskill
+wordskill_ctrl_mean <- mean(control$wordskill, na.rm = TRUE)
+wordskill_ctrl_sd <- sd(control$wordskill, na.rm = TRUE)
+
+wordskill_stdrd <- (star$wordskill - wordskill_ctrl_mean)/wordskill_ctrl_sd
+
+#Listening 
+listen_ctrl_mean <- mean(control$listen, na.rm = TRUE)
+listen_ctrl_sd <- sd(control$listen, na.rm = TRUE)
+
+listen_stdrd <- (star$listen - listen_ctrl_mean)/listen_ctrl_sd
+
+#Reporting summary statistics for four standardized test score variables
+
+summary(math_stdrd)
+sd(math_stdrd)
+
+summary(read_stdrd)
+sd(read_stdrd)
+
+summary(wordskill_stdrd)
+sd(wordskill_stdrd)
+
+summary(listen_stdrd)
+sd(listen_stdrd)
+
 ```
 
-## Including Plots
+```{r q3b}
 
-You can also embed plots, for example:
+#Creating standardized test score across all scores
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+sat_index <- (math_stdrd + read_stdrd + wordskill_stdrd + listen_stdrd)/4
+summary(sat_index)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r q3c}
+
+#3C: Histogram of sat_index for small and regular kindergarten classes
+
+histosat <- star |> 
+ggplot(aes(x = sat_index,
+          fill = factor(small, labels=c("Small", "Regular")),
+          y = ..density..)) +
+          geom_histogram(alpha = 0.5, position = "identity") +
+          labs(x = "Standardized Test Score", 
+               y = "Frequency",
+               fill = "Class Size",
+               title = "Standardized SAT Scores for Small vs. Regular Classrooms") 
+histosat
+
+ggsave("histostat.png")
+```
+There is some overlap between the standardized test scores for small and regular classrooms. 
+
+
+```{r q4}
+
+#4A: Aggregating the dataset by teacher information
+
+by_class <- star |> 
+            group_by(teacher_id, school_id, small, teacher_masters, teacher_white, teacher_black,    teacher_experience)
+
+classes <- by_class |> 
+           summarise(sat_index = mean(sat_index),
+                     class_size = mean(class_size))
+
+#reporting summary variables 
+summarysmall <- classes |> 
+                filter(small == 1) |> 
+                summary() 
+summarysmall
+
+summaryreg <- classes |> 
+                filter(small == 0) |> 
+                summary() 
+summaryreg
+
+```
+
+```{r q4b}
+
+#4B: Creating linear model for teacher experience and class size, constructing 95% confidence interval
+mod1 <- lm(teacher_experience ~ small, data = classes)
+summary(mod1)
+
+#95% Confidence interval
+mod1coef <- coeftest(mod1, vcov = vcovHC(mod1, type="HC1"))
+mod1se <- mod1coef[4]
+estdiff <- mod1coef[2]
+lb_cf1 <- estdiff - 1.96*mod1se
+ub_cf1 <- estdiff + 1.96*mod1se
+
+lb_cf1 #and 
+ub_cf1
+
+```
+
+The 95 % confidence interval for the estimated difference in teacher experience based on class size is between a -1.71 decrease in years of teacher experience and an .89 increase in years of experience. The regression coefficient is not statistically significant. 
+
+```{r q4c}
+
+#4C: Teacher Masters
+mod2 <- lm(teacher_masters ~ small, data = classes)
+summary(mod2)
+
+#95% Confidence interval
+mod2coef <- coeftest(mod2, vcov = vcovHC(mod2, type="HC1"))
+mod2se <- mod2coef[4]
+estdiff <- mod2coef[2]
+lb_cf2 <- estdiff - 1.96*mod2se
+ub_cf2 <- estdiff + 1.96*mod2se
+
+lb_cf2 #and 
+ub_cf2
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher having a master's degree based on class size is between a -0.14 decrease in the likelihood of a teacher having a master's and a 0.06 increase in the likelihood of a given teacher having a master's. The regression coefficient is not statistically significant. 
+
+```{r q4c}
+
+#4c: Teacher white
+mod3 <- lm(teacher_white ~ small, data = classes)
+summary(mod3)
+
+#95% Confidence interval
+mod3coef <- coeftest(mod3, vcov = vcovHC(mod3, type="HC1"))
+mod3se <- mod3coef[4]
+estdiff <- mod3coef[2]
+lb_cf3 <- estdiff - 1.96*mod3se
+ub_cf3 <- estdiff + 1.96*mod3se
+
+lb_cf3 #and 
+ub_cf3
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher being white based on class size is between a -0.03 decrease in the likelihood of a teacher being white and a 0.12 increase. The regression coefficient is not statistically significant. 
+
+```{r q4c}
+
+#4C: Teacher Black
+mod4 <- lm(teacher_black ~ small, data = classes)
+summary(mod4)
+
+#95% Confidence interval
+mod4coef <- coeftest(mod4, vcov = vcovHC(mod4, type="HC1"))
+mod4se <- mod4coef[4]
+estdiff <- mod4coef[2]
+lb_cf4 <- estdiff - 1.96*mod4se
+ub_cf4 <- estdiff + 1.96*mod4se
+
+lb_cf4 
+ub_cf4
+
+```
+
+The 95 % confidence interval for the estimated difference in a teacher being Black based on class size is between a -0.11 decrease in the likelihood of a teacher being white and a 0.04 increase. The regression coefficient is not statistically significant. 
+
+***Question 4D***
+As reported above, none of the regression coefficients in the linear models exploring the relationship between each of the teacher characteristics and class size were statistically significant. The coefficient magnitudes are quite small compared to the intercept, suggesting that they are not practically significant. This suggests that the randomization was successful in balancing teacher characteristics. 
+
+```{r q5}
+#Building multilinear regression model using school fixed effects
+
+mod5 <- lm(sat_index ~ small + factor(school_id), data = classes)
+summary(mod5)
+
+#95% confidence interval
+mod5coef <- coeftest(mod5, vcov = vcovHC(mod5, type="HC1"))
+mod5se <- mod5coef[2,2]
+estdiff <- mod5coef[2]
+lb_cf5 <- estdiff - 1.96*mod5se
+ub_cf5 <- estdiff + 1.96*mod5se
+
+#Bar chart showing the difference in standardized test score between small and regular classes
+control_bar <- mean(classes$sat_index[classes$small == 0])
+treat_bar <- control_bar + estdiff
+
+#create a dataframe
+data_for_graph <- data_frame(c(control_bar, treat_bar),
+                             c(NA, mod5se),
+                             c("Control", "Treatment"),
+                             c(NA, lb_cf5),
+                             c(NA, ub_cf5))
+
+names(data_for_graph)[1] <- "SAT_Index"
+names(data_for_graph)[2] <- "SE"
+names(data_for_graph)[3] <- "Groups"
+names(data_for_graph)[4] <- "Lower_bound"
+names(data_for_graph)[5] <- "Upper_bound"
+
+#create graph
+bar <- data_for_graph |> 
+       ggplot(aes(x = Groups, y = SAT_Index, fill = Groups)) +
+       geom_bar(stat = "identity", show.legend = FALSE, width = .6) +
+       geom_errorbar(aes(ymin = Lower_bound, ymax = Upper_bound), width=.1, size = 0.7,      color="black") +
+      labs(y = "SAT Index Score",
+           title = "Estimated Effect of STAR Treatment on Test Scores") +
+      scale_fill_manual(values = c("red", "blue")) 
+
+ggsave("bar.png")
+
+
+
+```
+
+
+
